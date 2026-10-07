@@ -9,15 +9,15 @@ export const ROLE_LABELS: Record<Role, string> = {
 };
 
 export const CLASS_ROLES = {
-  수호성: "tank",
+  수호: "tank",
   검성: "tank",
   궁성: "dealer",
-  마도성: "dealer",
-  정령성: "dealer",
+  마도: "dealer",
+  정령: "dealer",
   살성: "dealer",
   권성: "dealer",
-  호법성: "support",
-  치유성: "support",
+  호법: "support",
+  치유: "support",
 } as const satisfies Record<string, Role>;
 
 export type CharacterClass = keyof typeof CLASS_ROLES;

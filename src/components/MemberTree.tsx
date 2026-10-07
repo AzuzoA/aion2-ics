@@ -23,7 +23,7 @@ export default function MemberTree({ currentUserId }: { currentUserId: number })
   );
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="grid grid-cols-2 items-start gap-4">
       {sorted.map((m) => (
         <MemberNode key={m.id} member={m} isMe={m.id === currentUserId} />
       ))}
@@ -69,7 +69,7 @@ function MemberNode({ member, isMe }: { member: Member; isMe: boolean }) {
                     <span className={`w-12 text-xs ${c.isMain ? "font-bold text-amber-500" : "text-zinc-400"}`}>
                       {c.isMain ? "★ 본캐" : "부캐"}
                     </span>
-                    <CharacterSummary server={c.server} name={c.name} cls={c.class} level={c.level} combatPower={c.combatPower} />
+                    <CharacterSummary name={c.name} cls={c.class} combatPower={c.combatPower} />
                   </li>
                 ))}
               </ul>

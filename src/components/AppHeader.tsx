@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SignOutButton } from "./AuthButtons";
+import ThemeToggle from "./ThemeToggle";
 
 export default function AppHeader({ userName }: { userName: string }) {
   return (
@@ -12,8 +13,12 @@ export default function AppHeader({ userName }: { userName: string }) {
         <Link href="/members" className="hover:underline">
           레기온원
         </Link>
+        <Link href="/raids" className="hover:underline">
+          성역
+        </Link>
       </nav>
       <div className="flex items-center gap-3 text-sm">
+        <ThemeToggle />
         <span>{userName}</span>
         <SignOutButton />
       </div>

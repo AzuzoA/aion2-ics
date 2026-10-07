@@ -2,7 +2,7 @@ import "server-only";
 import { getDb, transaction } from "./db";
 
 export type AuditAction = "create" | "update" | "delete";
-export type AuditTarget = "user" | "account" | "character";
+export type AuditTarget = "user" | "account" | "character" | "raid" | "raid_participant";
 
 export interface AuditEntry {
   action: AuditAction;

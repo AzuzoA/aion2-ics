@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import ThemeToggle from "@/components/ThemeToggle";
 import { getCurrentUser } from "@/lib/auth";
 import AliasForm from "@/components/AliasForm";
 
@@ -8,7 +9,10 @@ export default async function OnboardingPage() {
   if (user.onboarded_at) redirect("/me");
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
+    <main className="relative flex flex-1 flex-col items-center justify-center gap-6 p-8">
+      <div className="absolute top-6 right-6">
+        <ThemeToggle />
+      </div>
       <div className="flex flex-col items-center gap-2 text-center">
         {user.avatar_url && (
           // eslint-disable-next-line @next/next/no-img-element -- Discord CDN 아바타

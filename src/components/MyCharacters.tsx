@@ -2,17 +2,18 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import CharacterSearch from "./CharacterSearch";
+import { CLASSES, type CharacterClass } from "@/lib/classes";
 import {
   api,
   btnCls,
   CharacterSummary,
   ErrorBanner,
   inputCls,
+  kInputToRaw,
+  rawToKInput,
   type Account,
   type Character,
   type Member,
-  type NcSearchResult,
 } from "./shared";
 
 interface MeResponse {
@@ -62,63 +63,73 @@ export default function MyCharacters() {
   const alts = all.filter((c) => !c.isMain);
   const accountLabel = (id: number) => accounts.find((a) => a.id === id)?.label ?? "";
 
-  const register = (accountId: number, isMain: boolean) => (r: NcSearchResult) =>
-    mutate("POST", "/api/characters", { accountId, server: r.server, name: r.name, isMain });
+  const register: Register = (accountId, isMain) => (input) =>
+    mutate("POST", "/api/characters", { accountId, ...input, isMain });
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
       <ErrorBanner message={error} />
 
-      <AliasSection
-        name={me.user.name}
-        onSave={async (name) => {
-          const ok = await mutate("PATCH", "/api/me", { name });
-          if (ok) router.refresh(); // 헤더의 이름 갱신
-          return ok;
-        }}
-      />
+      <div className="grid grid-cols-[1fr_380px] items-start gap-10">
+        <div className="flex flex-col gap-8">
+          {/* ---------- 본캐 ---------- */}
+          <section className="flex flex-col gap-3">
+            <h2 className="text-lg font-bold">★ 본캐</h2>
+            <MainSlot
+              main={main}
+              accounts={accounts}
+              accountLabel={accountLabel}
+              register={register}
+              mutate={mutate}
+            />
+          </section>
 
-      {/* ---------- 본캐 ---------- */}
-      <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-bold">★ 본캐</h2>
-        <MainSlot
-          main={main}
-          accounts={accounts}
-          accountLabel={accountLabel}
-          register={register}
-          mutate={mutate}
-        />
-      </section>
+          {/* ---------- 부캐 ---------- */}
+          <section className="flex flex-col gap-3">
+            <h2 className="text-lg font-bold">부캐 <span className="text-sm font-normal text-zinc-500">{alts.length}</span></h2>
+            <ul className="grid grid-cols-2 gap-2">
+              {alts.length === 0 && <li className="text-sm text-zinc-400">등록된 부캐가 없습니다.</li>}
+              {alts.map((c) => (
+                <CharacterCard key={c.id} character={c} accounts={accounts} accountLabel={accountLabel} mutate={mutate}>
+                  <button className={btnCls} onClick={() => mutate("PATCH", `/api/characters/${c.id}`, { isMain: true })}>
+                    본캐로 지정
+                  </button>
+                </CharacterCard>
+              ))}
+            </ul>
+            <AddPanel buttonLabel="+ 부캐 추가" pickLabel="부캐로 등록" accounts={accounts} onPick={(accId) => register(accId, false)} />
+          </section>
+        </div>
 
-      {/* ---------- 부캐 ---------- */}
-      <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-bold">부캐 <span className="text-sm font-normal text-zinc-500">{alts.length}</span></h2>
-        <ul className="flex flex-col gap-2">
-          {alts.length === 0 && <li className="text-sm text-zinc-400">등록된 부캐가 없습니다.</li>}
-          {alts.map((c) => (
-            <CharacterCard key={c.id} character={c} accounts={accounts} accountLabel={accountLabel} mutate={mutate}>
-              <button className={btnCls} onClick={() => mutate("PATCH", `/api/characters/${c.id}`, { isMain: true })}>
-                본캐로 지정
-              </button>
-            </CharacterCard>
-          ))}
-        </ul>
-        <AddPanel buttonLabel="+ 부캐 추가" pickLabel="부캐로 등록" accounts={accounts} onPick={(accId) => register(accId, false)} />
-      </section>
-
-      {/* ---------- 계정 ---------- */}
-      <AccountsSection accounts={accounts} userId={me.user.id} mutate={mutate} />
+        {/* ---------- 사이드바: 별칭 · 계정 ---------- */}
+        <aside className="sticky top-6 flex flex-col gap-8 rounded-lg border border-zinc-200 p-5 dark:border-zinc-800">
+          <AliasSection
+            name={me.user.name}
+            onSave={async (name) => {
+              const ok = await mutate("PATCH", "/api/me", { name });
+              if (ok) router.refresh(); // 헤더의 이름 갱신
+              return ok;
+            }}
+          />
+          <AccountsSection accounts={accounts} userId={me.user.id} mutate={mutate} />
+        </aside>
+      </div>
     </div>
   );
 }
 
 type Mutate = (method: string, url: string, body?: unknown) => Promise<boolean>;
-type Register = (accountId: number, isMain: boolean) => (r: NcSearchResult) => Promise<boolean>;
+interface CharacterInput {
+  name: string;
+  class: CharacterClass;
+  combatPower: number;
+}
+type Register = (accountId: number, isMain: boolean) => (input: CharacterInput) => Promise<boolean>;
 
 function AliasSection({ name, onSave }: { name: string; onSave: (name: string) => Promise<boolean> }) {
   const [editing, setEditing] = useState<string | null>(null);
   return (
-    <section className="flex items-center gap-3">
+    <section className="flex flex-wrap items-center gap-3">
       <span className="text-sm text-zinc-500">메인 별칭</span>
       {editing === null ? (
         <>
@@ -162,7 +173,7 @@ function MainSlot({
   if (!main) {
     return (
       <div className="flex flex-col gap-2 rounded-lg border-2 border-dashed border-amber-300 p-4 dark:border-amber-800">
-        <p className="text-sm text-zinc-500">본캐를 검색해서 등록하세요.</p>
+        <p className="text-sm text-zinc-500">본캐 정보를 입력해서 등록하세요.</p>
         <AddPanel initiallyOpen pickLabel="본캐로 등록" accounts={accounts} onPick={(accId) => register(accId, true)} />
       </div>
     );
@@ -203,6 +214,7 @@ function CharacterCard({
   bare?: boolean;
   children?: React.ReactNode;
 }) {
+  const [editing, setEditing] = useState<{ class: CharacterClass; combatPower: string } | null>(null);
   return (
     <li
       className={`flex flex-wrap items-center justify-between gap-2 ${
@@ -210,7 +222,28 @@ function CharacterCard({
       }`}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <CharacterSummary server={c.server} name={c.name} cls={c.class} level={c.level} combatPower={c.combatPower} />
+        {editing ? (
+          <form
+            className="flex items-center gap-2"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              // 남툴을 건드리지 않았으면 보내지 않는다 (3125 → "3.13" → 3130 반올림 방지)
+              const changed = editing.combatPower !== rawToKInput(c.combatPower);
+              const body = { class: editing.class, ...(changed && { combatPower: kInputToRaw(editing.combatPower) }) };
+              if (await mutate("PATCH", `/api/characters/${c.id}`, body)) setEditing(null);
+            }}
+          >
+            <ClassSelect value={editing.class} onChange={(cls) => setEditing({ ...editing, class: cls })} />
+            <CombatPowerInput value={editing.combatPower} onChange={(v) => setEditing({ ...editing, combatPower: v })} />
+            <span className="text-sm font-medium">{c.name}</span>
+            <button className={btnCls}>저장</button>
+            <button type="button" className={btnCls} onClick={() => setEditing(null)}>
+              취소
+            </button>
+          </form>
+        ) : (
+          <CharacterSummary name={c.name} cls={c.class} combatPower={c.combatPower} />
+        )}
         {accounts.length > 1 ? (
           <select
             aria-label="계정"
@@ -230,6 +263,11 @@ function CharacterCard({
       </div>
       <div className="flex gap-1">
         {children}
+        {!editing && (
+          <button className={btnCls} onClick={() => setEditing({ class: c.class, combatPower: rawToKInput(c.combatPower) })}>
+            수정
+          </button>
+        )}
         <button
           className={`${btnCls} text-red-600`}
           onClick={() => confirm(`"${c.name}" 캐릭터를 삭제할까요?`) && mutate("DELETE", `/api/characters/${c.id}`)}
@@ -241,7 +279,39 @@ function CharacterCard({
   );
 }
 
-/** 등록할 계정 선택 + 캐릭터 검색 패널 (버튼으로 열고 닫음) */
+function ClassSelect({ value, onChange }: { value: CharacterClass; onChange: (cls: CharacterClass) => void }) {
+  return (
+    <select aria-label="직업" className={inputCls} value={value} onChange={(e) => onChange(e.target.value as CharacterClass)}>
+      {CLASSES.map((cls) => (
+        <option key={cls} value={cls}>
+          {cls}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** 남툴 입력 (k 단위). 3,200이면 3.2 입력 */
+function CombatPowerInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <label className="flex items-center gap-1 text-sm" title="k 단위로 입력 (예: 3,200 → 3.2)">
+      <input
+        required
+        type="number"
+        min={0}
+        step={0.01}
+        aria-label="남툴 (k 단위)"
+        placeholder="남툴 예: 3.2"
+        className={`${inputCls} w-32`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <span className="text-zinc-500">k</span>
+    </label>
+  );
+}
+
+/** 등록할 계정 선택 + 직업·남툴·캐릭터명 직접 입력 패널 (버튼으로 열고 닫음) */
 function AddPanel({
   buttonLabel,
   pickLabel,
@@ -255,10 +325,14 @@ function AddPanel({
   hint?: string;
   initiallyOpen?: boolean;
   accounts: Account[];
-  onPick: (accountId: number) => (r: NcSearchResult) => Promise<boolean>;
+  onPick: (accountId: number) => (input: CharacterInput) => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(initiallyOpen);
   const [accountId, setAccountId] = useState(accounts[0]?.id);
+  const [cls, setCls] = useState<CharacterClass>(CLASSES[0]);
+  const [combatPower, setCombatPower] = useState("");
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
 
   if (!open) {
     return (
@@ -269,25 +343,51 @@ function AddPanel({
   }
   const selected = accounts.some((a) => a.id === accountId) ? accountId! : accounts[0]?.id;
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2 rounded-md border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
       {hint && <p className="text-xs text-zinc-500">{hint}</p>}
-      {accounts.length > 1 && (
-        <label className="flex items-center gap-2 text-sm">
-          등록할 계정
-          <select className={inputCls} value={selected} onChange={(e) => setAccountId(Number(e.target.value))}>
+      <p className="text-xs text-zinc-500">남툴은 k 단위로 입력하세요. 예: 3,200 → 3.2 (소수점 둘째 자리까지)</p>
+      <form
+        className="flex flex-wrap items-center gap-2"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setSaving(true);
+          const ok = await onPick(selected)({ name, class: cls, combatPower: kInputToRaw(combatPower) });
+          setSaving(false);
+          if (ok) {
+            setName("");
+            setCombatPower("");
+          }
+        }}
+      >
+        {accounts.length > 1 && (
+          <select aria-label="등록할 계정" className={inputCls} value={selected} onChange={(e) => setAccountId(Number(e.target.value))}>
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.label}
               </option>
             ))}
           </select>
-        </label>
-      )}
-      <CharacterSearch
-        pickLabel={pickLabel}
-        onPick={onPick(selected)}
-        onCancel={initiallyOpen ? undefined : () => setOpen(false)}
-      />
+        )}
+        <ClassSelect value={cls} onChange={setCls} />
+        <CombatPowerInput value={combatPower} onChange={setCombatPower} />
+        <input
+          autoFocus
+          required
+          maxLength={20}
+          className={`${inputCls} w-48`}
+          placeholder="캐릭터명"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <button className={btnCls} disabled={saving}>
+          {saving ? "등록 중…" : pickLabel}
+        </button>
+        {!initiallyOpen && (
+          <button type="button" className={btnCls} onClick={() => setOpen(false)}>
+            닫기
+          </button>
+        )}
+      </form>
     </div>
   );
 }

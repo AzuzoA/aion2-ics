@@ -49,6 +49,44 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS audit_logs_created ON audit_logs (created_at);
+
+-- 성역 레이드 방
+CREATE TABLE IF NOT EXISTS raids (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  title       TEXT    NOT NULL,
+  raid_date   TEXT    NOT NULL,     -- YYYY-MM-DDTHH:mm (KST)
+  raid_type   TEXT    NOT NULL DEFAULT 'rudra',  -- rudra/erosion/muspel/lament (루드라/침식/무스펠/비탄)
+  mode        TEXT    NOT NULL CHECK (mode IN ('multi', 'single')),  -- 다회차 / 단판
+  party_size  INTEGER NOT NULL DEFAULT 10,
+  created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- 참가 캐릭터. round가 조합 결과 (NULL이면 대기)
+CREATE TABLE IF NOT EXISTS raid_participants (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  raid_id       INTEGER NOT NULL REFERENCES raids(id) ON DELETE CASCADE,
+  character_id  INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+  round         INTEGER,
+  party         INTEGER,             -- 회차 안의 1파티/2파티
+  slot          INTEGER,             -- 파티 안 자리 1~5번 (5번 = 치유성)
+  added_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (raid_id, character_id)
+);
+
+-- 빈자리에 직접 입력한 이름 (참가 캐릭터가 없는 회차·파티·자리). 캐릭터가 앉으면 캐릭터가 우선
+CREATE TABLE IF NOT EXISTS raid_slot_notes (
+  raid_id  INTEGER NOT NULL REFERENCES raids(id) ON DELETE CASCADE,
+  round    INTEGER NOT NULL,
+  party    INTEGER NOT NULL,
+  slot     INTEGER NOT NULL,
+  text     TEXT    NOT NULL,
+  kind     TEXT,                -- melee / ranged / NULL(안 고름)
+  PRIMARY KEY (raid_id, round, party, slot)
+);
+-- 공략 칸 단위 입력(raid_slot_notes 이전 방식, 데이터 없이 바로 교체됨)
+DROP TABLE IF EXISTS raid_duty_notes;
 `;
 
 // 컬럼 추가에 의존하는 인덱스는 마이그레이션 이후에 만든다
@@ -74,6 +112,15 @@ function open(): DatabaseSync {
   db.exec(SCHEMA);
   addColumnIfMissing(db, "users", "onboarded_at", "onboarded_at TEXT");
   addColumnIfMissing(db, "characters", "server", "server TEXT");
+  addColumnIfMissing(db, "raid_participants", "party", "party INTEGER");
+  addColumnIfMissing(db, "raid_participants", "slot", "slot INTEGER");
+  addColumnIfMissing(db, "raid_slot_notes", "kind", "kind TEXT");
+  addColumnIfMissing(db, "raids", "raid_type", "raid_type TEXT NOT NULL DEFAULT 'rudra'");
+  // 직업명 2자 통일 (수호성 → 수호 등)
+  db.exec(`UPDATE characters SET class = CASE class
+    WHEN '수호성' THEN '수호' WHEN '마도성' THEN '마도' WHEN '정령성' THEN '정령'
+    WHEN '호법성' THEN '호법' WHEN '치유성' THEN '치유' ELSE class END
+    WHERE class IN ('수호성', '마도성', '정령성', '호법성', '치유성')`);
   db.exec(INDEXES);
   return db;
 }

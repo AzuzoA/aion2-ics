@@ -1,5 +1,6 @@
 import "server-only";
 import { getCurrentUser } from "./auth";
+import { isCharacterClass, type CharacterClass } from "./classes";
 import { ConflictError, NotFoundError, ValidationError, type UserRow } from "./members";
 
 export function jsonError(status: number, message: string) {
@@ -47,6 +48,20 @@ export function requireString(value: unknown, field: string, maxLength = 30): st
   const trimmed = value.trim();
   if (trimmed.length > maxLength) throw new ValidationError(`${field}은(는) ${maxLength}자 이하여야 합니다.`);
   return trimmed;
+}
+
+/** 0 이상의 정수. 폼 입력 문자열("3200")도 허용한다. */
+export function requireNonNegativeInt(value: unknown, field: string): number {
+  const n = typeof value === "string" && value.trim() ? Number(value) : value;
+  if (typeof n !== "number" || !Number.isInteger(n) || n < 0) {
+    throw new ValidationError(`${field}은(는) 0 이상의 정수여야 합니다.`);
+  }
+  return n;
+}
+
+export function requireClass(value: unknown): CharacterClass {
+  if (!isCharacterClass(value)) throw new ValidationError("올바른 직업이 아닙니다.");
+  return value;
 }
 
 export function optionalBoolean(value: unknown, field: string): boolean | undefined {

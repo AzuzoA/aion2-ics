@@ -1,8 +1,18 @@
 @import "tailwindcss";
 
+/* dark: 변형을 OS 설정이 아닌 <html data-theme="dark">에 연결한다 (ThemeToggle로 전환) */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -12,10 +22,13 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* select 드롭다운 목록은 select의 글자색(다크: 밝은색)을 물려받지만 배경은 브라우저 기본(흰색)이라
+   다크 모드에서 안 보인다. 옵션 색을 테마에 맞춰 명시한다. (base 레이어라 유틸리티 클래스가 우선) */
+@layer base {
+  option,
+  optgroup {
+    background-color: var(--background);
+    color: var(--foreground);
   }
 }
 

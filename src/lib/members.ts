@@ -1,8 +1,7 @@
 import "server-only";
 import { getDb, transaction } from "./db";
 import { audited, writeAuditLog } from "./audit";
-import type { CharacterClass } from "./classes";
-import type { NcCharacter } from "./nc";
+import { CLASSES, type CharacterClass } from "./classes";
 
 // ---------- 타입 ----------
 
@@ -92,7 +91,17 @@ function toNode(c: CharacterRow): CharacterNode {
   };
 }
 
-/** 유저 → 계정 → 캐릭터 트리. userId를 주면 해당 유저만. 본캐가 먼저, 그다음 전투력 순. */
+/** 본캐 → 직업(CLASSES 순서) → 남툴 높은 순 → 이름 */
+function compareCharacters(a: CharacterNode, b: CharacterNode): number {
+  return (
+    Number(b.isMain) - Number(a.isMain) ||
+    CLASSES.indexOf(a.class) - CLASSES.indexOf(b.class) ||
+    (b.combatPower ?? -1) - (a.combatPower ?? -1) ||
+    a.name.localeCompare(b.name, "ko")
+  );
+}
+
+/** 유저 → 계정 → 캐릭터 트리. userId를 주면 해당 유저만. 캐릭터는 compareCharacters 순. */
 export function listMemberTrees(userId?: number): MemberTree[] {
   const db = getDb();
   const where = userId === undefined ? "" : "WHERE user_id = ?";
@@ -104,7 +113,7 @@ export function listMemberTrees(userId?: number): MemberTree[] {
     .prepare(`SELECT id, user_id, label FROM accounts ${where} ORDER BY id`)
     .all(...params) as unknown as AccountRow[];
   const characters = db
-    .prepare(`SELECT * FROM characters ${where} ORDER BY is_main DESC, combat_power DESC, id`)
+    .prepare(`SELECT * FROM characters ${where} ORDER BY id`)
     .all(...params) as unknown as CharacterRow[];
 
   const trees = new Map<number, MemberTree>(
@@ -117,6 +126,7 @@ export function listMemberTrees(userId?: number): MemberTree[] {
     trees.get(a.user_id)?.accounts.push(node);
   }
   for (const c of characters) accountNodes.get(c.account_id)?.characters.push(toNode(c));
+  for (const a of accountNodes.values()) a.characters.sort(compareCharacters);
   // 본캐가 있는 계정을 맨 위로
   for (const t of trees.values()) {
     t.accounts.sort(
@@ -230,27 +240,34 @@ function clearMain(userId: number) {
   getDb().prepare("UPDATE characters SET is_main = 0 WHERE user_id = ? AND is_main = 1").run(userId);
 }
 
-/** NC API에서 조회한 캐릭터를 등록한다. isMain이면 기존 본캐는 부캐로 내려간다. */
+export interface CharacterInput {
+  name: string;
+  class: CharacterClass;
+  combatPower: number;
+}
+
+/** 직접 입력한 캐릭터를 등록한다. isMain이면 기존 본캐는 부캐로 내려간다. */
 export function registerCharacter(
   actorId: number,
   accountId: number,
-  nc: NcCharacter,
+  input: CharacterInput,
   isMain: boolean,
 ): CharacterRow {
   return audited(actorId, () => {
     const db = getDb();
     const account = getAccount(accountId);
     if (!account) throw new NotFoundError("계정을 찾을 수 없습니다.");
-    const dup = db.prepare("SELECT 1 FROM characters WHERE server = ? AND name = ?").get(nc.server, nc.name);
-    if (dup) throw new ConflictError(`[${nc.server}] ${nc.name}은(는) 이미 등록된 캐릭터입니다.`);
+    // 서버 구분 없이 이름으로 중복을 막는다 (server 컬럼은 NC API 시절 데이터용)
+    const dup = db.prepare("SELECT 1 FROM characters WHERE name = ?").get(input.name);
+    if (dup) throw new ConflictError(`${input.name}은(는) 이미 등록된 캐릭터입니다.`);
     if (isMain) clearMain(account.user_id);
     const { lastInsertRowid } = db
       .prepare(
         `INSERT INTO characters
-           (user_id, account_id, server, name, class, level, combat_power, is_main, synced_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+           (user_id, account_id, name, class, combat_power, is_main)
+         VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .run(account.user_id, accountId, nc.server, nc.name, nc.class, nc.level, nc.combatPower, isMain ? 1 : 0);
+      .run(account.user_id, accountId, input.name, input.class, input.combatPower, isMain ? 1 : 0);
     const character = getCharacter(Number(lastInsertRowid))!;
     return {
       result: character,
@@ -259,11 +276,11 @@ export function registerCharacter(
   });
 }
 
-/** 본캐 지정/해제, 계정 이동. 직업·레벨·전투력은 NC API 값이므로 직접 수정하지 않는다. */
+/** 본캐 지정/해제, 계정 이동, 직업·남툴 수정 */
 export function updateCharacter(
   actorId: number,
   characterId: number,
-  patch: { isMain?: boolean; accountId?: number },
+  patch: { isMain?: boolean; accountId?: number; class?: CharacterClass; combatPower?: number },
 ): CharacterRow {
   return audited(actorId, () => {
     const before = getCharacter(characterId);
@@ -288,8 +305,11 @@ export function updateCharacter(
     }
 
     getDb()
-      .prepare("UPDATE characters SET account_id = ?, is_main = ?, updated_at = datetime('now') WHERE id = ?")
-      .run(accountId, isMain, characterId);
+      .prepare(
+        `UPDATE characters SET account_id = ?, is_main = ?, class = ?, combat_power = ?,
+           updated_at = datetime('now') WHERE id = ?`,
+      )
+      .run(accountId, isMain, patch.class ?? before.class, patch.combatPower ?? before.combat_power, characterId);
     const after = getCharacter(characterId)!;
     return {
       result: after,
@@ -310,8 +330,3 @@ export function deleteCharacter(actorId: number, characterId: number): void {
   });
 }
 
-/** 등록 여부 확인용: 주어진 서버의 등록된 캐릭터 이름 집합 */
-export function registeredNames(server: string): Set<string> {
-  const rows = getDb().prepare("SELECT name FROM characters WHERE server = ?").all(server) as { name: string }[];
-  return new Set(rows.map((r) => r.name));
-}
